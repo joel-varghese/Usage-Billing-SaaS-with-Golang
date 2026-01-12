@@ -1,0 +1,46 @@
+version: "3.9"
+
+services:
+  localstack:
+    image: localstack/localstack
+    ports:
+      - "4566:4566"
+    volumes:
+      - ./scripts:/etc/localstack/init/ready.d
+
+  usage-collector:
+    build: 
+      context: .
+      dockerfile: services/usage-collector/Dockerfile
+    container_name: usage-collector
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    depends_on:
+      - localstack
+
+  aggregator:
+    build: 
+      context: .
+      dockerfile: services/aggregator/Dockerfile
+    container_name: aggregator
+    env_file:
+      - .env
+    depends_on:
+      - localstack
+
+  billing-api:
+    build: 
+      context: .
+      dockerfile: services/billing-api/Dockerfile
+    container_name: billing-api
+    env_file:
+      - .env
+    ports:
+      - "8081:8080"
+    depends_on:
+      - localstack
+
+volumes:
+  localstack-data:

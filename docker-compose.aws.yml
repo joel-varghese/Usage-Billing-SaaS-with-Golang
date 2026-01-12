@@ -1,0 +1,40 @@
+version: "3.9"
+
+# Docker Compose configuration for AWS deployment
+# This version does not include LocalStack and connects directly to AWS services
+# Usage: docker-compose -f docker-compose.aws.yml up -d --build
+
+services:
+  usage-collector:
+    build: 
+      context: .
+      dockerfile: services/usage-collector/Dockerfile
+    container_name: usage-collector
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    # No depends_on needed - services connect directly to AWS
+
+  aggregator:
+    build: 
+      context: .
+      dockerfile: services/aggregator/Dockerfile
+    container_name: aggregator
+    env_file:
+      - .env
+    restart: unless-stopped
+    # No depends_on needed - services connect directly to AWS
+
+  billing-api:
+    build: 
+      context: .
+      dockerfile: services/billing-api/Dockerfile
+    container_name: billing-api
+    env_file:
+      - .env
+    ports:
+      - "8081:8080"
+    restart: unless-stopped
+    # No depends_on needed - services connect directly to AWS
