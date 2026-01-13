@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -28,19 +29,8 @@ func NewConsumer(cfg aws.Config) *Consumer {
 	}
 }
 
-
-func (c *Consumer) Start() {
-	ctx := context.Background()
-
-	stream, err := c.kinesis.DescribeStream(ctx, &kinesis.DescribeStreamInput{
-		StreamName: aws.String(c.stream),
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	shardID := *stream.StreamDescription.Shards[0].ShardId
-	log.Printf("Using shard: %s\n", shardID)
+func (c *Consumer) processShard(ctx context.Context, shardID string) {
+	log.Printf("Starting consumer for shard: %s", shardID)
 
 	iterator, err := c.kinesis.GetShardIterator(ctx, &kinesis.GetShardIteratorInput{
 		StreamName:        aws.String(c.stream),
@@ -48,11 +38,12 @@ func (c *Consumer) Start() {
 		ShardIteratorType: "LATEST",
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("Error getting shard iterator for %s: %v", shardID, err)
+		return
 	}
 
 	shardIterator := iterator.ShardIterator
-	log.Println("Consumer started, listening for new events (LATEST iterator)...")
+	log.Printf("Consumer started for shard %s, listening for new events (LATEST iterator)...", shardID)
 
 	for {
 		out, err := c.kinesis.GetRecords(ctx, &kinesis.GetRecordsInput{
@@ -60,35 +51,75 @@ func (c *Consumer) Start() {
 			Limit:         aws.Int32(100),
 		})
 		if err != nil {
-			log.Println("get records error:", err)
+			log.Printf("get records error for shard %s: %v", shardID, err)
 			time.Sleep(2 * time.Second)
 			continue
 		}
 
 		if len(out.Records) > 0 {
-			log.Printf("Received %d record(s) from Kinesis\n", len(out.Records))
+			log.Printf("Shard %s: Received %d record(s) from Kinesis", shardID, len(out.Records))
 		}
 
 		for _, r := range out.Records {
 			var event models.UsageEvent
 			if err := json.Unmarshal(r.Data, &event); err != nil {
-				log.Println("invalid record:", err)
+				log.Printf("Shard %s: invalid record: %v", shardID, err)
 				continue
 			}
 
 			pk := "TENANT#" + event.TenantID
 			sk := "METRIC#" + event.Metric
 
-			log.Printf("Processing event: tenant=%s, metric=%s, value=%d\n", event.TenantID, event.Metric, event.Value)
+			log.Printf("Shard %s: Processing event: tenant=%s, metric=%s, value=%d", 
+				shardID, event.TenantID, event.Metric, event.Value)
 			if err := c.repo.IncrementUsage(pk, sk, event.Value); err != nil {
-				log.Println("dynamodb error:", err)
+				log.Printf("Shard %s: dynamodb error: %v", shardID, err)
 			} else {
-				log.Printf("Successfully updated DynamoDB: pk=%s, sk=%s\n", pk, sk)
+				log.Printf("Shard %s: Successfully updated DynamoDB: pk=%s, sk=%s", shardID, pk, sk)
 			}
 		}
 
 		shardIterator = out.NextShardIterator
+		if shardIterator == nil {
+			log.Printf("Shard %s: NextShardIterator is nil, exiting consumer", shardID)
+			return
+		}
 		time.Sleep(1 * time.Second)
 	}
 }
 
+func (c *Consumer) Start() {
+	ctx := context.Background()
+
+	log.Printf("Describing stream: %s", c.stream)
+	stream, err := c.kinesis.DescribeStream(ctx, &kinesis.DescribeStreamInput{
+		StreamName: aws.String(c.stream),
+	})
+	if err != nil {
+		log.Fatalf("Error describing stream: %v", err)
+	}
+
+	shards := stream.StreamDescription.Shards
+	log.Printf("Found %d shard(s) in stream", len(shards))
+
+	if len(shards) == 0 {
+		log.Fatal("No shards found in stream")
+	}
+
+	var wg sync.WaitGroup
+	for _, shard := range shards {
+		if shard.ShardId == nil {
+			continue
+		}
+		shardID := *shard.ShardId
+		log.Printf("Starting consumer for shard: %s", shardID)
+		wg.Add(1)
+		go func(sid string) {
+			defer wg.Done()
+			c.processShard(ctx, sid)
+		}(shardID)
+	}
+
+	log.Println("All shard consumers started. Waiting for events...")
+	wg.Wait()
+}
