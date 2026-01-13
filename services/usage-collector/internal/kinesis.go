@@ -3,6 +3,7 @@ package internal
 import (
     "context"
     "encoding/json"
+    "log"
     "os"
 
     "github.com/aws/aws-sdk-go-v2/aws"
@@ -21,29 +22,43 @@ type KinesisProducer struct {
 }
 
 func NewKinesisProducer() Producer {
-    awsCfg := config.LoadAWSConfig(
-        os.Getenv("AWS_ENDPOINT"),
-        os.Getenv("AWS_REGION"),
-    )
+    endpoint := os.Getenv("AWS_ENDPOINT")
+    region := os.Getenv("AWS_REGION")
+    stream := os.Getenv("KINESIS_STREAM")
+    
+    log.Printf("Initializing Kinesis producer: endpoint=%s, region=%s, stream=%s", 
+        endpoint, region, stream)
+    
+    awsCfg := config.LoadAWSConfig(endpoint, region)
 
     return &KinesisProducer{
         client:     kinesis.NewFromConfig(awsCfg),
-        stream: os.Getenv("KINESIS_STREAM"),
+        stream: stream,
     }
 }
 
 func (p *KinesisProducer) Publish(ctx context.Context, event models.UsageEvent) error {
+    log.Printf("Publishing to Kinesis stream: %s", p.stream)
+    
     data, err := json.Marshal(event)
-
     if err != nil {
+        log.Printf("Error marshaling event: %v", err)
         return err
     }
 
-    _, err = p.client.PutRecord(ctx, &kinesis.PutRecordInput{
+    log.Printf("Putting record to stream: %s, partition_key: %s", p.stream, event.TenantID)
+    result, err := p.client.PutRecord(ctx, &kinesis.PutRecordInput{
         StreamName:   aws.String(p.stream),
         PartitionKey: aws.String(event.TenantID),
         Data:        data,
     })
 
-    return err
+    if err != nil {
+        log.Printf("Error putting record to Kinesis: %v", err)
+        return err
+    }
+
+    log.Printf("Successfully put record to Kinesis. SequenceNumber: %s, ShardId: %s", 
+        aws.ToString(result.SequenceNumber), aws.ToString(result.ShardId))
+    return nil
 }

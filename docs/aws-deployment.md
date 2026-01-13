@@ -23,7 +23,7 @@ This guide will help you deploy the usage billing platform to AWS using your AWS
 
 1. Go to AWS Console → DynamoDB → Tables
 2. Click "Create table"
-3. Set table name (e.g., `usage-aggregates`)
+3. Set table name (e.g., `usage-aggregator`)
 4. Set partition key: `pk` (String)
 5. Set sort key: `sk` (String)
 6. Choose table settings (defaults are fine)
@@ -55,7 +55,7 @@ AWS_ENDPOINT=         # Leave empty for real AWS (only set for LocalStack)
 
 # Service Configuration
 KINESIS_STREAM=usage-events        # Your Kinesis stream name
-DYNAMODB_TABLE=usage-aggregates    # Your DynamoDB table name
+DYNAMODB_TABLE=usage-aggregator    # Your DynamoDB table name
 ```
 
 **Important**: 

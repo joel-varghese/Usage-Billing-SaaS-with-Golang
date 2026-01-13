@@ -1,5 +1,3 @@
-version: "3.9"
-
 # Docker Compose configuration for AWS deployment
 # This version does not include LocalStack and connects directly to AWS services
 # Usage: docker-compose -f docker-compose.aws.yml up -d --build

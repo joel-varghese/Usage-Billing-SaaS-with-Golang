@@ -9,7 +9,7 @@
 - Capacity: On-demand or Provisioned
 
 **DynamoDB Table:**
-- Name: `usage-aggregates` (or your preferred name)
+- Name: `usage-aggregator` (or your preferred name)
 - Partition Key: `pk` (String)
 - Sort Key: `sk` (String)
 
@@ -21,7 +21,7 @@ On your EC2 instance, create a `.env` file:
 AWS_REGION=us-east-1
 AWS_ENDPOINT=
 KINESIS_STREAM=usage-events
-DYNAMODB_TABLE=usage-aggregates
+DYNAMODB_TABLE=usage-aggregator
 ```
 
 **Important:** 
