@@ -4,6 +4,7 @@ import (
     "context"
     "fmt"
     "os"
+    "strings"
 
     "github.com/aws/aws-sdk-go-v2/aws"
     "github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -38,15 +39,16 @@ func (r *DynamoRepository) GetMonthlyUsage(
     tenantID string,
     month string,
 ) (map[string]int64, error) {
+    // NOTE: Fastest path fix — aggregator currently stores items with:
+    // pk = TENANT#<tenantId>, sk = METRIC#<metric>, usage=<int>
+    // Month is not yet part of the key, so month is ignored here.
+    pk := "TENANT#" + tenantID
 
     out, err := r.client.Query(ctx, &dynamodb.QueryInput{
-        TableName: aws.String(r.table),
-        KeyConditionExpression: aws.String(
-            "tenant_id = :tenant AND usage_month = :month",
-        ),
+        TableName:              aws.String(r.table),
+        KeyConditionExpression: aws.String("pk = :pk"),
         ExpressionAttributeValues: map[string]types.AttributeValue{
-            ":tenant": &types.AttributeValueMemberS{Value: tenantID},
-            ":month":  &types.AttributeValueMemberS{Value: month},
+            ":pk": &types.AttributeValueMemberS{Value: pk},
         },
     })
     if err != nil {
@@ -55,8 +57,18 @@ func (r *DynamoRepository) GetMonthlyUsage(
 
     totals := make(map[string]int64)
     for _, item := range out.Items {
-        metric := item["metric"].(*types.AttributeValueMemberS).Value
-        value := item["total"].(*types.AttributeValueMemberN).Value
+        // Expect sk = METRIC#<metric>
+        sk, ok := item["sk"].(*types.AttributeValueMemberS)
+        if !ok {
+            continue
+        }
+        metric := strings.TrimPrefix(sk.Value, "METRIC#")
+
+        usageAttr, ok := item["usage"].(*types.AttributeValueMemberN)
+        if !ok {
+            continue
+        }
+        value := usageAttr.Value
 
         var v int64
         fmt.Sscan(value, &v)
